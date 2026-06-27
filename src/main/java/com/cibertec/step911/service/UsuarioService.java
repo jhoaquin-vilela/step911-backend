@@ -4,6 +4,7 @@ import java.util.List;
 import java.util.Optional;
 
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
 import com.cibertec.step911.entity.Usuario;
@@ -15,8 +16,20 @@ public class UsuarioService {
     @Autowired
     private UsuarioRepository repository;
 
-    // C - Crear
+    // MAGIA DE SEGURIDAD: Inyectamos el encriptador de Spring Security
+    @Autowired
+    private PasswordEncoder passwordEncoder;
+
+    // C - Crear (CON ENCRIPTACIÓN REAL BCRYPT)
     public Usuario registrarUsuario(Usuario usuario) {
+        // 1. Tomamos la contraseña en texto plano que llega desde tu página web
+        // 2. La encriptamos con BCrypt
+        String claveEncriptada = passwordEncoder.encode(usuario.getPasswordHash());
+        
+        // 3. Reemplazamos la contraseña plana por la encriptada
+        usuario.setPasswordHash(claveEncriptada);
+        
+        // 4. Guardamos el usuario blindado en PostgreSQL
         return repository.save(usuario);
     }
 
@@ -44,8 +57,7 @@ public class UsuarioService {
         return null;
     }
 
-    // D - Eliminar (En un sistema real, a un usuario se le inactiva, no se le borra, 
-    // pero para fines del CRUD académico mantendremos el Delete)
+    // D - Eliminar
     public boolean eliminarUsuario(Integer id) {
         if(repository.existsById(id)) {
             repository.deleteById(id);
