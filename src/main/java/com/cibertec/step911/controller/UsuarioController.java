@@ -1,10 +1,12 @@
 package com.cibertec.step911.controller;
 
 import java.util.List;
+import java.util.Optional;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
 import com.cibertec.step911.entity.Usuario;
@@ -17,6 +19,23 @@ public class UsuarioController {
     @Autowired
     private UsuarioService service;
 
+    // ==========================================
+    // NUEVO: Obtener los datos del usuario logueado
+    // ==========================================
+    @GetMapping("/me")
+    public ResponseEntity<Usuario> obtenerUsuarioActual(Authentication auth) {
+        if (auth == null) return new ResponseEntity<>(HttpStatus.UNAUTHORIZED);
+        
+        // auth.getName() nos da el 'username' del que inició sesión
+        Optional<Usuario> usuario = service.buscarPorUsername(auth.getName());
+        
+        return usuario.map(u -> new ResponseEntity<>(u, HttpStatus.OK))
+                      .orElse(new ResponseEntity<>(HttpStatus.NOT_FOUND));
+    }
+
+    // ==========================================
+    // CRUD NORMAL
+    // ==========================================
     @GetMapping
     public ResponseEntity<List<Usuario>> listarUsuarios() {
         return new ResponseEntity<>(service.listarTodos(), HttpStatus.OK);
@@ -24,8 +43,6 @@ public class UsuarioController {
 
     @PostMapping
     public ResponseEntity<Usuario> registrarUsuario(@RequestBody Usuario usuario) {
-        // OJO: En este punto, la contraseña viajará en texto plano.
-        // Más adelante, cuando implementemos Security, encriptaremos el "passwordHash" aquí antes de guardarlo.
         Usuario nuevoUsuario = service.registrarUsuario(usuario);
         return new ResponseEntity<>(nuevoUsuario, HttpStatus.CREATED);
     }

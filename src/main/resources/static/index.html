@@ -1,0 +1,944 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>STEP 911 - Centro de Comando</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet-control-geocoder/dist/Control.Geocoder.css" />
+    
+    <style>
+        body { background-color: #0b0f19; color: #e2e8f0; } 
+        #map { height: 100%; width: 100%; border-radius: 0.5rem; z-index: 1; cursor: crosshair; }
+        .glass-panel { background: rgba(15, 23, 42, 0.9); border: 1px solid #1e293b; }
+        .oculto { display: none !important; }
+        .leaflet-control-geocoder { background-color: #1e293b !important; color: white !important; border: 1px solid #334155 !important; }
+        .leaflet-control-geocoder input { background-color: transparent !important; color: white !important; }
+        .leaflet-control-geocoder-icon { filter: invert(1); }
+        .nav-btn.active { border-bottom: 2px solid #3b82f6; color: #60a5fa; }
+        @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap');
+        .font-tactical { font-family: 'Share Tech Mono', monospace; }
+        
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: #0b0f19; }
+        ::-webkit-scrollbar-thumb { background: #334155; border-radius: 10px; }
+        ::-webkit-scrollbar-thumb:hover { background: #475569; }
+    </style>
+</head>
+<body class="h-screen w-screen overflow-hidden flex flex-col font-sans relative">
+
+    <!-- LOGIN SCREEN -->
+    <div id="login-screen" class="absolute inset-0 z-50 flex items-center justify-center bg-[#0b0f19]">
+        <div class="glass-panel p-8 rounded-xl shadow-2xl w-96 text-center border-t-4 border-blue-500">
+            <i class="fa-solid fa-shield-halved text-5xl text-blue-500 mb-4"></i>
+            <h1 class="text-2xl font-bold mb-2 tracking-widest text-white">STEP <span class="text-blue-500">911</span></h1>
+            <p class="text-slate-400 text-sm mb-6">Acceso a Red Táctica Policial</p>
+            
+            <div class="mb-4 text-left">
+                <label class="block text-xs font-bold text-slate-400 mb-1">USUARIO (Placa / ID)</label>
+                <div class="flex bg-slate-800/50 rounded border border-slate-700 overflow-hidden focus-within:border-blue-500">
+                    <span class="p-3 text-slate-400"><i class="fa-solid fa-user"></i></span>
+                    <input type="text" id="username" class="w-full bg-transparent text-white outline-none p-2" placeholder="Ej: admin">
+                </div>
+            </div>
+            
+            <div class="mb-6 text-left">
+                <label class="block text-xs font-bold text-slate-400 mb-1">CÓDIGO DE ACCESO</label>
+                <div class="flex bg-slate-800/50 rounded border border-slate-700 overflow-hidden focus-within:border-blue-500">
+                    <span class="p-3 text-slate-400"><i class="fa-solid fa-lock"></i></span>
+                    <input type="password" id="password" class="w-full bg-transparent text-white outline-none p-2" placeholder="••••••••">
+                </div>
+            </div>
+
+            <button onclick="iniciarSesion()" class="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 px-4 rounded transition-all tracking-widest">
+                INICIAR TRANSMISIÓN <i class="fa-solid fa-satellite-dish ml-2"></i>
+            </button>
+            <p id="login-error" class="text-red-400 text-sm mt-4 font-bold hidden">Credenciales inválidas.</p>
+        </div>
+    </div>
+
+    <!-- MAIN APP SCREEN -->
+    <div id="app-screen" class="oculto h-full flex flex-col">
+        
+        <!-- HEADER NAV -->
+        <header class="bg-[#0f1523] h-14 flex items-center justify-between px-6 border-b border-slate-800 shrink-0">
+            <div class="flex items-center gap-8 h-full">
+                <div class="flex items-center gap-3">
+                    <div class="bg-red-600 text-white text-xs font-bold px-2 py-1 rounded shadow-[0_0_8px_rgba(220,38,38,0.5)]">911</div>
+                    <h1 class="text-sm font-bold tracking-widest text-slate-300">SIT-AWARE</h1>
+                </div>
+                
+                <!-- PESTAÑAS DE NAVEGACIÓN DINÁMICAS -->
+                <div class="flex gap-6 h-full text-xs font-bold text-slate-500 tracking-wider">
+                    <button onclick="cambiarVista('operador')" id="btn-vista-operador" class="nav-btn oculto hover:text-white flex items-center gap-2 h-full px-2 transition-colors uppercase">
+                        <i class="fa-solid fa-headset"></i> Operador
+                    </button>
+                    <button onclick="cambiarVista('despachador')" id="btn-vista-despachador" class="nav-btn oculto hover:text-white flex items-center gap-2 h-full px-2 transition-colors uppercase">
+                        <i class="fa-solid fa-truck-fast"></i> Despachador
+                    </button>
+                    <button onclick="cambiarVista('admin')" id="btn-vista-admin" class="nav-btn oculto hover:text-white flex items-center gap-2 h-full px-2 transition-colors uppercase">
+                        <i class="fa-solid fa-users-gear"></i> Personal
+                    </button>
+                </div>
+            </div>
+
+            <div class="flex items-center gap-6">
+                <div class="flex items-center gap-4 text-xs font-bold text-slate-400">
+                    <span id="reloj-tactico" class="font-tactical text-slate-300 text-sm tracking-wider">00:00:00</span>
+                    <span class="flex items-center gap-1 text-emerald-500">
+                        <i class="fa-solid fa-bolt text-[10px]"></i> EN LÍNEA
+                    </span>
+                </div>
+                
+                <div class="flex items-center gap-3 border-l border-slate-700 pl-6">
+                    <div class="text-right">
+                        <p class="text-xs font-bold text-white uppercase" id="user-display">Operador</p>
+                        <p class="text-[10px] text-blue-400 font-bold" id="user-role">ROL</p>
+                    </div>
+                    <button onclick="cerrarSesion()" class="text-slate-500 hover:text-red-500 transition-colors">
+                        <i class="fa-solid fa-power-off text-lg"></i>
+                    </button>
+                </div>
+            </div>
+        </header>
+
+        <!-- VISTA: MAPA TÁCTICO (Usado por Operador y Despachador) -->
+        <main id="vista-tactica" class="flex-1 flex overflow-hidden p-4 gap-4">
+            
+            <!-- PANEL IZQUIERDO -->
+            <aside class="w-96 flex flex-col gap-4 shrink-0">
+                
+                <!-- PANEL DE LLAMADA ACTIVA (Solo Operador) -->
+                <div id="panel-llamada-activa" class="oculto bg-[#0b0f19] border border-red-900/50 rounded p-4 relative overflow-hidden shadow-lg">
+                    <div class="absolute top-0 left-0 w-1 h-full bg-red-600 animate-pulse"></div>
+                    <p class="text-[10px] text-emerald-500 font-bold tracking-widest mb-3 flex items-center gap-2"><i class="fa-solid fa-circle text-[8px] animate-pulse"></i> LLAMADA EN CURSO</p>
+                    <h3 class="text-white font-bold text-sm">Ciudadano / Reporte</h3>
+                    <p id="caller-number" class="text-slate-500 font-tactical text-xs mb-3">55 0000 0000</p>
+                    <div id="call-timer" class="text-red-500 font-tactical text-4xl font-bold mb-4 tracking-wider">00:00</div>
+                    <div class="flex gap-2">
+                        <button class="flex-1 bg-[#0f1523] border border-slate-700 hover:border-slate-500 text-slate-300 text-[10px] py-2 rounded tracking-widest font-bold transition-colors"><i class="fa-solid fa-pause mr-1"></i> PAUSAR</button>
+                        <button onclick="colgarLlamada()" class="w-12 bg-red-900/30 hover:bg-red-600 border border-red-800 text-red-500 hover:text-white rounded flex items-center justify-center transition-colors" title="Colgar"><i class="fa-solid fa-phone-slash"></i></button>
+                    </div>
+                </div>
+
+                <!-- Botón de Registro (Solo Operador) -->
+                <button id="btn-nueva-emergencia" onclick="abrirModalEmergencia()" class="w-full bg-red-600/10 hover:bg-red-600/20 text-red-500 border border-red-900/50 font-bold py-4 rounded shadow-lg flex items-center justify-center gap-3 text-sm tracking-widest transition-transform active:scale-95">
+                    <i class="fa-solid fa-plus"></i> NUEVA EMERGENCIA
+                </button>
+                
+                <!-- LISTA DE ALERTAS (Operador y Despachador) -->
+                <div class="glass-panel rounded flex-1 flex flex-col overflow-hidden">
+                    <div class="p-3 border-b border-slate-800 bg-[#0b0f19] flex justify-between items-center">
+                        <h2 class="font-bold text-xs tracking-widest text-slate-400" id="titulo-panel-izquierdo">DENUNCIAS REGISTRADAS</h2>
+                        <button onclick="cargarAlertas()" class="text-blue-500 hover:text-blue-400"><i class="fa-solid fa-rotate-right"></i></button>
+                    </div>
+                    <div class="p-4 overflow-y-auto flex-1 space-y-3" id="lista-alertas">
+                        <div class="text-center text-slate-600 text-xs py-10"><i class="fa-solid fa-check-double text-2xl mb-2 opacity-50"></i><p>Sin incidentes.</p></div>
+                    </div>
+                </div>
+            </aside>
+            
+            <!-- PANEL CENTRAL (MAPA) -->
+            <section class="flex-1 rounded p-1 relative border border-slate-800 bg-[#0f1523]">
+                <div class="absolute top-4 left-4 z-[1000] bg-slate-900/90 p-2 rounded border border-slate-700 text-xs text-slate-400 pointer-events-none font-tactical">
+                    <i class="fa-solid fa-crosshairs text-blue-500 mr-1"></i> CENTRO DE COMANDO
+                </div>
+                <div id="map"></div>
+            </section>
+            
+            <!-- PANELES DERECHOS DINÁMICOS -->
+            
+            <!-- PANEL COLA DE ESPERA (Solo Operador) -->
+            <aside id="panel-derecho-operador" class="w-72 glass-panel rounded flex flex-col shrink-0 overflow-hidden border-t-2 border-red-900">
+                <div class="p-3 border-b border-slate-800 bg-[#0b0f19] flex justify-between items-center">
+                    <h2 class="font-bold text-xs tracking-widest text-slate-400"><i class="fa-solid fa-headset mr-2"></i>COLA DE ESPERA</h2>
+                    <span id="contador-cola" class="bg-red-600 text-white text-[10px] px-2 py-0.5 rounded font-bold">0</span>
+                </div>
+                <div class="p-2 overflow-y-auto flex-1 space-y-2 bg-[#0b0f19]" id="cola-llamadas">
+                    <div class="text-center text-slate-600 text-xs py-10"><i class="fa-solid fa-phone-slash text-2xl mb-2 opacity-30"></i><p>Líneas despejadas.</p></div>
+                </div>
+            </aside>
+
+            <!-- PANEL DE PATRULLAS (Solo Despachador) -->
+            <aside id="panel-derecho-despachador" class="w-72 glass-panel rounded flex flex-col shrink-0 overflow-hidden border-t-2 border-blue-600 oculto">
+                <div class="p-3 border-b border-slate-800 bg-[#0b0f19] flex justify-between items-center">
+                    <h2 class="font-bold text-xs tracking-widest text-slate-400"><i class="fa-solid fa-car-side mr-2"></i>PATRULLAS (GPS)</h2>
+                    <div class="flex gap-3">
+                        <button onclick="abrirModalUnidad()" class="text-emerald-500 hover:text-emerald-400 transition-colors" title="Alta de Nueva Patrulla"><i class="fa-solid fa-plus"></i></button>
+                        <button onclick="cargarUnidades()" class="text-blue-500 hover:text-blue-400 transition-colors" title="Actualizar GPS"><i class="fa-solid fa-rotate-right"></i></button>
+                    </div>
+                </div>
+                <div class="p-2 overflow-y-auto flex-1 space-y-2 bg-[#0b0f19]" id="lista-unidades">
+                    <!-- Patrullas inyectadas aquí -->
+                </div>
+            </aside>
+        </main>
+
+        <!-- VISTA: GESTIÓN DE PERSONAL (Solo Admin) -->
+        <main id="vista-admin" class="oculto flex-1 overflow-y-auto p-8 gap-4 bg-[#0b0f19]">
+            <div class="max-w-4xl mx-auto">
+                <div class="flex items-center gap-3 mb-6">
+                    <i class="fa-solid fa-users-gear text-2xl text-blue-500"></i>
+                    <div>
+                        <h2 class="text-xl font-bold text-white tracking-widest">GESTIÓN DE PERSONAL</h2>
+                        <p class="text-slate-500 text-xs">Alta y administración de operadores y despachadores.</p>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-3 gap-6">
+                    <div class="col-span-1 glass-panel p-5 rounded h-fit border-t-2 border-blue-600">
+                        <h3 class="font-bold text-white text-sm mb-4"><i class="fa-solid fa-user-plus text-blue-500 mr-2"></i>Nuevo Elemento</h3>
+                        <div class="space-y-4">
+                            <div>
+                                <label class="block text-[10px] font-bold text-slate-500 mb-1 tracking-widest">NOMBRE COMPLETO</label>
+                                <input type="text" id="nuevo-nombre" class="w-full bg-[#0b0f19] border border-slate-700 rounded p-2 text-white outline-none text-sm focus:border-blue-500">
+                            </div>
+                            <div>
+                                <label class="block text-[10px] font-bold text-slate-500 mb-1 tracking-widest">USUARIO (ID)</label>
+                                <input type="text" id="nuevo-user" class="w-full bg-[#0b0f19] border border-slate-700 rounded p-2 text-white outline-none text-sm focus:border-blue-500">
+                            </div>
+                            <div>
+                                <label class="block text-[10px] font-bold text-slate-500 mb-1 tracking-widest">CONTRASEÑA TEMPORAL</label>
+                                <input type="password" id="nuevo-pass" class="w-full bg-[#0b0f19] border border-slate-700 rounded p-2 text-white outline-none text-sm focus:border-blue-500">
+                            </div>
+                            <div>
+                                <label class="block text-[10px] font-bold text-slate-500 mb-1 tracking-widest">ROL OPERATIVO</label>
+                                <select id="nuevo-rol" class="w-full bg-[#0b0f19] border border-slate-700 rounded p-2 text-white outline-none text-sm focus:border-blue-500">
+                                    <option value="OPERADOR">OPERADOR (911)</option>
+                                    <option value="DESPACHADOR">DESPACHADOR</option>
+                                    <option value="ADMIN">ADMINISTRADOR</option>
+                                </select>
+                            </div>
+                            <button onclick="crearUsuario()" class="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-2 rounded mt-2 text-xs tracking-widest">REGISTRAR</button>
+                        </div>
+                    </div>
+
+                    <div class="col-span-2 glass-panel p-5 rounded">
+                        <div class="flex justify-between items-center mb-4">
+                            <h3 class="font-bold text-white text-sm"><i class="fa-solid fa-address-book text-blue-500 mr-2"></i>Personal Activo</h3>
+                            <button onclick="cargarUsuarios()" class="text-slate-400 hover:text-white text-xs"><i class="fa-solid fa-rotate-right"></i> Actualizar</button>
+                        </div>
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-left text-xs text-slate-300">
+                                <thead class="bg-[#0b0f19] text-slate-500 border-b border-slate-800">
+                                    <tr>
+                                        <th class="px-4 py-3">ID USUARIO</th><th class="px-4 py-3">NOMBRE COMPLETO</th><th class="px-4 py-3">ROL</th><th class="px-4 py-3">ESTADO</th><th class="px-4 py-3 text-right">ACCIONES</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="tabla-usuarios-body" class="divide-y divide-slate-800"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- MODAL DE EMERGENCIA (Creación - Operador) -->
+    <div id="modal-emergencia" class="oculto absolute inset-0 z-[60] bg-[#0b0f19]/90 flex items-center justify-center backdrop-blur-sm">
+        <div class="glass-panel p-6 rounded shadow-2xl w-[600px] border-t-2 border-red-600">
+            <div class="flex justify-between items-center mb-6">
+                <h2 class="text-lg font-bold text-white tracking-widest"><i class="fa-solid fa-triangle-exclamation text-red-600 mr-2"></i> NUEVA DENUNCIA</h2>
+                <button onclick="cerrarModalEmergencia()" class="text-slate-500 hover:text-white transition-colors"><i class="fa-solid fa-xmark text-xl"></i></button>
+            </div>
+            
+            <div class="space-y-5">
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-[10px] font-bold text-slate-500 mb-1 tracking-widest">TELÉFONO DE CONTACTO</label>
+                        <input type="text" id="tel-info" class="w-full bg-[#0b0f19] border border-slate-700 rounded p-2 text-white outline-none text-sm">
+                    </div>
+                    <div>
+                        <label class="block text-[10px] font-bold text-slate-500 mb-1 tracking-widest">PRIORIDAD DE DENUNCIA</label>
+                        <select id="severidad" class="w-full bg-[#0b0f19] border border-slate-700 rounded p-2 text-white outline-none font-bold text-sm">
+                            <option value="ALTA" class="text-red-500">CRÍTICA / ALTA</option>
+                            <option value="MEDIA" class="text-amber-500">MEDIA</option>
+                            <option value="BAJA" class="text-emerald-500">BAJA</option>
+                        </select>
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-[10px] font-bold text-slate-500 mb-1 tracking-widest">DESCRIPCIÓN DE LOS HECHOS</label>
+                    <textarea id="desc-hechos" rows="3" class="w-full bg-[#0b0f19] border border-slate-700 rounded p-2 text-white outline-none text-sm" placeholder="Describa el incidente..."></textarea>
+                </div>
+                <div class="grid grid-cols-2 gap-4 bg-[#0b0f19] p-3 rounded border border-slate-800">
+                    <div>
+                        <label class="block text-[10px] font-bold text-slate-600 mb-1 tracking-widest">LATITUD</label>
+                        <input type="text" id="lat-alerta" readonly class="w-full bg-transparent text-slate-400 outline-none font-tactical text-sm">
+                    </div>
+                    <div>
+                        <label class="block text-[10px] font-bold text-slate-600 mb-1 tracking-widest">LONGITUD</label>
+                        <input type="text" id="lng-alerta" readonly class="w-full bg-transparent text-slate-400 outline-none font-tactical text-sm">
+                    </div>
+                </div>
+                <p id="coordenadas-warning" class="text-xs text-amber-500 hidden"><i class="fa-solid fa-triangle-exclamation"></i> Selecciona un punto en el mapa primero.</p>
+                <div class="pt-2">
+                    <button onclick="guardarEmergencia()" class="w-full bg-blue-600/20 border border-blue-500/50 hover:bg-blue-600 hover:border-blue-600 text-blue-400 hover:text-white font-bold py-3 rounded transition-all text-xs tracking-widest flex items-center justify-center gap-2">
+                        <i class="fa-regular fa-paper-plane"></i> REGISTRAR Y ENVIAR A DESPACHO
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL DE DESPACHO (Asignación - Despachador) -->
+    <div id="modal-despacho" class="oculto absolute inset-0 z-[70] bg-[#0b0f19]/90 flex items-center justify-center backdrop-blur-sm">
+        <div class="glass-panel p-6 rounded shadow-2xl w-[500px] border-t-2 border-blue-600">
+            <div class="flex justify-between items-center mb-6">
+                <h2 class="text-lg font-bold text-white tracking-widest"><i class="fa-solid fa-satellite-dish text-blue-500 mr-2"></i> DESPACHO DE UNIDAD</h2>
+                <button onclick="cerrarModalDespacho()" class="text-slate-500 hover:text-white transition-colors"><i class="fa-solid fa-xmark text-xl"></i></button>
+            </div>
+            
+            <div class="space-y-4">
+                <div class="bg-red-900/20 border border-red-900/50 p-3 rounded">
+                    <p class="text-[10px] text-red-400 font-bold tracking-widest mb-1">DETALLES DEL INCIDENTE #<span id="despacho-id-alerta"></span></p>
+                    <p class="text-sm text-slate-200" id="despacho-desc"></p>
+                </div>
+
+                <div>
+                    <label class="block text-[10px] font-bold text-slate-500 mb-2 tracking-widest">SELECCIONE UNIDAD A MOVILIZAR</label>
+                    <select id="select-unidad" class="w-full bg-[#0b0f19] border border-slate-700 rounded p-3 text-white outline-none focus:border-blue-500 text-sm font-bold">
+                        <!-- Llenado por JS -->
+                    </select>
+                </div>
+
+                <div class="pt-4">
+                    <button onclick="despacharUnidad()" class="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 rounded transition-all text-xs tracking-widest flex items-center justify-center gap-2">
+                        <i class="fa-solid fa-truck-fast"></i> DESPACHAR UNIDAD
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL DE NUEVA UNIDAD (Alta - Despachador) -->
+    <div id="modal-unidad" class="oculto absolute inset-0 z-[80] bg-[#0b0f19]/90 flex items-center justify-center backdrop-blur-sm">
+        <div class="glass-panel p-6 rounded shadow-2xl w-[400px] border-t-2 border-emerald-500">
+            <div class="flex justify-between items-center mb-6">
+                <h2 class="text-lg font-bold text-white tracking-widest"><i class="fa-solid fa-car text-emerald-500 mr-2"></i> ALTA DE UNIDAD</h2>
+                <button onclick="cerrarModalUnidad()" class="text-slate-500 hover:text-white transition-colors"><i class="fa-solid fa-xmark text-xl"></i></button>
+            </div>
+            
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-[10px] font-bold text-slate-500 mb-1 tracking-widest">CÓDIGO DE PATRULLA</label>
+                    <input type="text" id="unidad-codigo" class="w-full bg-[#0b0f19] border border-slate-700 rounded p-3 text-white outline-none focus:border-emerald-500 text-sm font-bold" placeholder="Ej: U-04">
+                </div>
+                <div>
+                    <label class="block text-[10px] font-bold text-slate-500 mb-1 tracking-widest">TIPO DE VEHÍCULO</label>
+                    <select id="unidad-tipo" class="w-full bg-[#0b0f19] border border-slate-700 rounded p-3 text-white outline-none focus:border-emerald-500 text-sm font-bold">
+                        <option value="Camioneta">Camioneta (4x4)</option>
+                        <option value="Motocicleta">Motocicleta (Intervención Rápida)</option>
+                    </select>
+                </div>
+                <div class="pt-4">
+                    <button onclick="guardarUnidad()" class="w-full bg-emerald-600/20 border border-emerald-500/50 hover:bg-emerald-600 hover:border-emerald-600 text-emerald-400 hover:text-white font-bold py-3 rounded transition-all text-xs tracking-widest flex items-center justify-center gap-2">
+                        <i class="fa-solid fa-satellite-dish"></i> REGISTRAR Y CONECTAR GPS
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://unpkg.com/leaflet-control-geocoder/dist/Control.Geocoder.js"></script>
+
+    <script>
+        let mapa;
+        let tokenBasico = "";
+        let usuarioActual = null;
+        let modoActual = "operador"; // Mantiene el estado de la pestaña
+        
+        let marcadorEmergenciaNuevo = null;
+        let capaAlertas = L.layerGroup(); 
+
+        // Variables Globales de Datos
+        let listaAlertasGlobal = [];
+        let listaUnidadesGlobal = [];
+        let alertaSeleccionadaParaDespacho = null;
+
+        // Simulador de Llamadas
+        let simuladorInterval = null;
+        let timerEsperaInterval = null;
+        let timerLlamadaInterval = null;
+        let colaLlamadas = [];
+        let idLlamadaGlobal = 1;
+        let segundosLlamada = 0;
+        let numeroEnLlamada = "";
+
+        // ==========================================
+        // RELOJ TÁCTICO
+        // ==========================================
+        setInterval(() => {
+            const ahora = new Date();
+            let h = ahora.getHours(), m = ahora.getMinutes(), s = ahora.getSeconds();
+            let ampm = h >= 12 ? 'p.m.' : 'a.m.';
+            h = h % 12 || 12;
+            document.getElementById('reloj-tactico').innerText = `${h < 10 ? '0'+h : h}:${m < 10 ? '0'+m : m}:${s < 10 ? '0'+s : s} ${ampm}`;
+        }, 1000);
+
+        // ==========================================
+        // SESIÓN Y ROLES
+        // ==========================================
+        async function iniciarSesion() {
+            const user = document.getElementById('username').value;
+            const pass = document.getElementById('password').value;
+            if(!user || !pass) return;
+
+            tokenBasico = "Basic " + btoa(user + ":" + pass);
+
+            try {
+                const response = await fetch('/api/usuarios/me', { headers: { 'Authorization': tokenBasico } });
+                
+                if (response.ok) {
+                    usuarioActual = await response.json();
+                    
+                    document.getElementById('login-screen').classList.add('oculto');
+                    document.getElementById('app-screen').classList.remove('oculto');
+                    
+                    document.getElementById('user-display').innerText = usuarioActual.nombreCompleto;
+                    document.getElementById('user-role').innerText = usuarioActual.rol;
+                    
+                    // Lógica de Pestañas según Rol
+                    if(usuarioActual.rol === 'ADMIN') {
+                        document.getElementById('btn-vista-operador').classList.remove('oculto');
+                        document.getElementById('btn-vista-despachador').classList.remove('oculto');
+                        document.getElementById('btn-vista-admin').classList.remove('oculto');
+                        cambiarVista('operador'); // Admin inicia como operador por defecto
+                    } else if (usuarioActual.rol === 'OPERADOR') {
+                        document.getElementById('btn-vista-operador').classList.remove('oculto');
+                        cambiarVista('operador');
+                    } else if (usuarioActual.rol === 'DESPACHADOR') {
+                        document.getElementById('btn-vista-despachador').classList.remove('oculto');
+                        cambiarVista('despachador');
+                    }
+                    
+                    inicializarMapa();
+                    cargarAlertas(); 
+                    cargarUnidades();
+                    iniciarSimuladorLlamadas();
+
+                } else {
+                    document.getElementById('login-error').classList.remove('hidden');
+                }
+            } catch (error) { alert("Error de conexión con el servidor."); }
+        }
+
+        function cerrarSesion() {
+            location.reload(); // Forma más limpia de reiniciar toda la app simulada
+        }
+
+        // ==========================================
+        // CONTROLADOR DE VISTAS (LA MAGIA DE UI)
+        // ==========================================
+        function cambiarVista(vista) {
+            modoActual = vista;
+            
+            // Reiniciar botones
+            document.querySelectorAll('.nav-btn').forEach(btn => btn.classList.remove('active'));
+            
+            if(vista === 'operador') {
+                document.getElementById('btn-vista-operador').classList.add('active');
+                document.getElementById('vista-tactica').classList.remove('oculto');
+                document.getElementById('vista-admin').classList.add('oculto');
+                
+                // Paneles de Operador
+                document.getElementById('btn-nueva-emergencia').classList.remove('oculto');
+                document.getElementById('panel-derecho-operador').classList.remove('oculto');
+                document.getElementById('panel-derecho-despachador').classList.add('oculto');
+                document.getElementById('titulo-panel-izquierdo').innerText = "DENUNCIAS REGISTRADAS";
+                
+                if(mapa) setTimeout(() => mapa.invalidateSize(), 100);
+
+            } else if(vista === 'despachador') {
+                document.getElementById('btn-vista-despachador').classList.add('active');
+                document.getElementById('vista-tactica').classList.remove('oculto');
+                document.getElementById('vista-admin').classList.add('oculto');
+                
+                // Paneles de Despachador
+                document.getElementById('btn-nueva-emergencia').classList.add('oculto');
+                document.getElementById('panel-derecho-operador').classList.add('oculto');
+                document.getElementById('panel-derecho-despachador').classList.remove('oculto');
+                document.getElementById('titulo-panel-izquierdo').innerText = "DENUNCIAS PENDIENTES"; // Título cambia
+
+                // Cierra llamadas si el Admin cambia a modo despachador en plena llamada
+                if(numeroEnLlamada !== "") colgarLlamada();
+
+                if(mapa) setTimeout(() => mapa.invalidateSize(), 100);
+                
+            } else if(vista === 'admin') {
+                document.getElementById('btn-vista-admin').classList.add('active');
+                document.getElementById('vista-tactica').classList.add('oculto');
+                document.getElementById('vista-admin').classList.remove('oculto');
+                cargarUsuarios();
+            }
+            
+            cargarAlertas(); // Refrescar lista visual
+        }
+
+        // ==========================================
+        // LÓGICA DE MAPA Y ALERTAS (CRUD)
+        // ==========================================
+        function inicializarMapa() {
+            if(mapa) return; 
+            mapa = L.map('map').setView([-8.11599, -79.03198], 14); 
+            L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { maxZoom: 19 }).addTo(mapa);
+            
+            L.Control.geocoder({ defaultMarkGeocode: false, placeholder: "Buscar calle o sector..." })
+            .on('markgeocode', function(e) { mapa.fitBounds(L.polygon([e.geocode.bbox.getSouthEast(), e.geocode.bbox.getNorthEast(), e.geocode.bbox.getNorthWest(), e.geocode.bbox.getSouthWest()]).getBounds()); }).addTo(mapa);
+
+            mapa.on('click', function(e) {
+                if(modoActual !== 'operador') return; // Despachador no registra coordenadas nuevas
+                
+                const lat = e.latlng.lat.toFixed(6), lng = e.latlng.lng.toFixed(6);
+                document.getElementById('lat-alerta').value = lat;
+                document.getElementById('lng-alerta').value = lng;
+                document.getElementById('coordenadas-warning').classList.add('hidden');
+
+                if(marcadorEmergenciaNuevo) mapa.removeLayer(marcadorEmergenciaNuevo);
+                
+                const iconoObjetivo = L.divIcon({
+                    html: '<i class="fa-solid fa-crosshairs text-red-500 text-3xl animate-pulse drop-shadow-[0_0_5px_rgba(255,0,0,0.8)]"></i>',
+                    className: 'bg-transparent', iconSize: [30, 30], iconAnchor: [15, 15]
+                });
+                marcadorEmergenciaNuevo = L.marker([lat, lng], {icon: iconoObjetivo}).addTo(mapa);
+            });
+        }
+
+        async function guardarEmergencia() {
+            const tel = document.getElementById('tel-info').value, severidad = document.getElementById('severidad').value, desc = document.getElementById('desc-hechos').value, lat = document.getElementById('lat-alerta').value, lng = document.getElementById('lng-alerta').value;
+            if(!lat || !lng) { document.getElementById('coordenadas-warning').classList.remove('hidden'); return; }
+            if(!desc) { alert("La descripción es obligatoria."); return; }
+
+            const nuevaAlerta = {
+                telefonoInformante: tel, descripcionHechos: desc,
+                latitudEmergencia: parseFloat(lat), longitudEmergencia: parseFloat(lng),
+                codigoSeveridad: severidad, usuarioOperador: { idUsuario: usuarioActual.idUsuario }
+            };
+
+            try {
+                const response = await fetch('/api/alertas', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': tokenBasico }, body: JSON.stringify(nuevaAlerta) });
+                if(response.ok) {
+                    cerrarModalEmergencia();
+                    colgarLlamada();
+                    document.getElementById('desc-hechos').value = ''; document.getElementById('tel-info').value = '';
+                    document.getElementById('lat-alerta').value = ''; document.getElementById('lng-alerta').value = '';
+                    if(marcadorEmergenciaNuevo) mapa.removeLayer(marcadorEmergenciaNuevo); 
+                    cargarAlertas();
+                }
+            } catch (e) { alert("Error de conexión al servidor."); }
+        }
+
+        async function cargarAlertas() {
+            try {
+                const response = await fetch('/api/alertas', { headers: { 'Authorization': tokenBasico } });
+                if(response.ok) {
+                    listaAlertasGlobal = await response.json();
+                    renderizarAlertasUI();
+                }
+            } catch (e) { console.error(e); }
+        }
+
+        function renderizarAlertasUI() {
+            const contenedor = document.getElementById('lista-alertas');
+            contenedor.innerHTML = ''; 
+            capaAlertas.clearLayers();
+            capaAlertas.addTo(mapa);
+
+            // Filtro: El despachador idealmente solo se enfoca en las PENDIENTES
+            let alertasMostrar = listaAlertasGlobal;
+            if(modoActual === 'despachador') {
+                alertasMostrar = listaAlertasGlobal.filter(a => a.estadoAlerta === 'PENDIENTE');
+            }
+
+            if(alertasMostrar.length === 0) {
+                contenedor.innerHTML = `<div class="text-center text-slate-600 text-xs py-10"><i class="fa-solid fa-check-double text-2xl mb-2 opacity-50"></i><p>Sin incidentes.</p></div>`;
+                return;
+            }
+            
+            alertasMostrar.forEach(a => {
+                let colorBorder = a.codigoSeveridad === 'ALTA' ? 'border-red-600' : (a.codigoSeveridad === 'MEDIA' ? 'border-amber-500' : 'border-emerald-500');
+                let colorTexto = a.codigoSeveridad === 'ALTA' ? 'text-red-500' : (a.codigoSeveridad === 'MEDIA' ? 'text-amber-500' : 'text-emerald-500');
+                let horaRegistro = a.fechaHoraRegistro ? new Date(a.fechaHoraRegistro).toLocaleTimeString('es-ES', {hour: '2-digit', minute:'2-digit'}) : '--:--';
+                
+                // Etiqueta de estado
+                let etiquetaEstado = "";
+                if(a.estadoAlerta === 'ATENDIDA' && a.unidadAsignada) {
+                    etiquetaEstado = `<span class="bg-blue-900/50 text-blue-400 border border-blue-700 px-1 py-0.5 rounded text-[8px]">UNIDAD ${a.unidadAsignada.codigoPatrulla}</span>`;
+                } else {
+                    etiquetaEstado = `<span class="bg-red-900/50 text-red-400 border border-red-700 px-1 py-0.5 rounded text-[8px] animate-pulse">PENDIENTE</span>`;
+                }
+
+                // Inyectar tarjeta en la lista
+                contenedor.innerHTML += `
+                    <div class="bg-slate-800/30 border-l-2 ${colorBorder} rounded p-3 cursor-pointer hover:bg-slate-800 transition-colors" onclick="clicEnAlerta(${a.idAlerta}, ${a.latitudEmergencia}, ${a.longitudEmergencia})">
+                        <div class="flex justify-between items-start mb-1">
+                            <div class="flex items-center gap-2">
+                                <i class="fa-solid fa-circle text-[8px] ${colorTexto}"></i>
+                                <span class="text-xs font-bold text-slate-200">INCIDENTE #${a.idAlerta}</span>
+                            </div>
+                            <span class="text-[10px] text-slate-500 font-tactical">${horaRegistro}</span>
+                        </div>
+                        <p class="text-xs text-slate-400 line-clamp-2 pl-4 mb-1">${a.descripcionHechos}</p>
+                        <div class="pl-4">${etiquetaEstado}</div>
+                    </div>
+                `;
+
+                // Dibujar Pin en el mapa
+                if(a.latitudEmergencia && a.longitudEmergencia) {
+                    // Si está atendida, el pin es azul y no parpadea
+                    let pinClase = a.estadoAlerta === 'PENDIENTE' ? `border-${colorBorder.split('-')[1]}-600 bg-slate-900 shadow-[0_0_10px_rgba(255,0,0,0.5)] animate-pulse` : `border-blue-500 bg-blue-900/80 opacity-70`;
+                    let iconoColor = a.estadoAlerta === 'PENDIENTE' ? colorTexto : 'text-blue-300';
+                    
+                    const iconoAlerta = L.divIcon({
+                        html: `<div class="flex items-center justify-center w-6 h-6 rounded-full border-2 ${pinClase}">
+                                <i class="fa-solid fa-exclamation ${iconoColor} text-[10px]"></i>
+                               </div>`,
+                        className: 'bg-transparent', iconSize: [24, 24], iconAnchor: [12, 12]
+                    });
+
+                    const marker = L.marker([a.latitudEmergencia, a.longitudEmergencia], {icon: iconoAlerta})
+                        .bindPopup(`<b class="${colorTexto}">INCIDENTE #${a.idAlerta}</b><br><span class="text-xs">${a.descripcionHechos}</span>`);
+                    
+                    capaAlertas.addLayer(marker);
+                }
+            });
+        }
+
+        // ==========================================
+        // FLUJO DE DESPACHO (NUEVO)
+        // ==========================================
+        function clicEnAlerta(idAlerta, lat, lng) {
+            mapa.setView([lat, lng], 17); // Ambos roles enfocan el mapa
+            
+            // Si el Despachador hace clic, abre la ventana de despacho para asignar patrulla
+            if(modoActual === 'despachador') {
+                const alerta = listaAlertasGlobal.find(a => a.idAlerta === idAlerta);
+                if(alerta && alerta.estadoAlerta === 'PENDIENTE') {
+                    abrirModalDespacho(alerta);
+                }
+            }
+        }
+
+        function abrirModalDespacho(alerta) {
+            alertaSeleccionadaParaDespacho = alerta;
+            document.getElementById('despacho-id-alerta').innerText = alerta.idAlerta;
+            document.getElementById('despacho-desc').innerText = alerta.descripcionHechos;
+            
+            // Llenar el <select> solo con patrullas disponibles
+            const select = document.getElementById('select-unidad');
+            select.innerHTML = '<option value="">-- Seleccione una patrulla --</option>';
+            
+            let disponibles = 0;
+            listaUnidadesGlobal.forEach(u => {
+                if(u.estadoOperativo === 'DISPONIBLE') {
+                    select.innerHTML += `<option value="${u.idUnidad}">${u.codigoPatrulla} (${u.tipoVehiculo})</option>`;
+                    disponibles++;
+                }
+            });
+
+            if(disponibles === 0) select.innerHTML = '<option value="">⚠️ No hay unidades disponibles</option>';
+
+            document.getElementById('modal-despacho').classList.remove('oculto');
+        }
+
+        function cerrarModalDespacho() { document.getElementById('modal-despacho').classList.add('oculto'); }
+
+        async function despacharUnidad() {
+            const idUnidad = document.getElementById('select-unidad').value;
+            if(!idUnidad) return alert("Debe seleccionar una unidad disponible primero.");
+
+            // Clonamos el objeto de la alerta y modificamos lo necesario para el Backend
+            const alertaActualizada = {
+                ...alertaSeleccionadaParaDespacho,
+                estadoAlerta: 'ATENDIDA',
+                unidadAsignada: { idUnidad: parseInt(idUnidad) }
+            };
+
+            try {
+                // 1. Actualizar la Alerta
+                const resAlerta = await fetch(`/api/alertas/${alertaActualizada.idAlerta}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': tokenBasico },
+                    body: JSON.stringify(alertaActualizada)
+                });
+
+                if(resAlerta.ok) {
+                    // 2. (Opcional) Cambiar el estado de la patrulla a "EN RUTA"
+                    const unidad = listaUnidadesGlobal.find(u => u.idUnidad == idUnidad);
+                    unidad.estadoOperativo = 'EN RUTA';
+                    await fetch(`/api/unidades/${idUnidad}`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json', 'Authorization': tokenBasico },
+                        body: JSON.stringify(unidad)
+                    });
+
+                    cerrarModalDespacho();
+                    cargarAlertas();
+                    cargarUnidades(); // Refrescar UI de Patrullas
+                }
+            } catch(e) { alert("Error al comunicar con la central de despacho."); }
+        }
+
+        // ==========================================
+        // LÓGICA DE UNIDADES (PATRULLAS)
+        // ==========================================
+        async function cargarUnidades() {
+            try {
+                const response = await fetch('/api/unidades', { headers: { 'Authorization': tokenBasico } });
+                if(response.ok) {
+                    listaUnidadesGlobal = await response.json();
+                    
+                    const contenedor = document.getElementById('lista-unidades');
+                    if(contenedor) {
+                        contenedor.innerHTML = ''; 
+                        listaUnidadesGlobal.forEach(u => {
+                            let icono = u.tipoVehiculo === 'Motocicleta' ? 'fa-motorcycle' : 'fa-truck-pickup';
+                            let colorEstado = u.estadoOperativo === 'DISPONIBLE' ? 'text-emerald-500' : 'text-amber-500';
+                            
+                            contenedor.innerHTML += `
+                                <div class="bg-slate-800/30 border border-slate-700/50 rounded p-2 flex justify-between cursor-pointer hover:bg-slate-800 transition-colors" onclick="mapa.setView([${u.latitudActual}, ${u.longitudActual}], 17)">
+                                    <div class="flex items-center gap-3">
+                                        <div class="text-slate-400 bg-[#0b0f19] p-1.5 rounded"><i class="fa-solid ${icono} text-xs"></i></div>
+                                        <div>
+                                            <h3 class="font-bold text-slate-200 text-xs">${u.codigoPatrulla}</h3>
+                                            <p class="text-[9px] ${colorEstado} tracking-widest">${u.estadoOperativo}</p>
+                                        </div>
+                                    </div>
+                                </div>`;
+                            
+                            if(u.latitudActual && u.longitudActual) {
+                                const iconoPatrulla = L.divIcon({
+                                    html: `<div class="bg-slate-800 text-slate-300 rounded-full w-6 h-6 flex items-center justify-center border border-slate-600 shadow-[0_0_8px_rgba(255,255,255,0.2)]"><i class="fa-solid ${icono} text-[10px]"></i></div>`,
+                                    className: 'bg-transparent', iconSize: [24, 24], iconAnchor: [12, 12]
+                                });
+                                L.marker([u.latitudActual, u.longitudActual], {icon: iconoPatrulla}).addTo(mapa).bindPopup(`<b class="text-xs">${u.codigoPatrulla}</b>`);
+                            }
+                        });
+                    }
+                }
+            } catch (e) {}
+        }
+
+
+        // ==========================================
+        // SIMULADOR DE LLAMADAS (Mantenido de v4.4)
+        // ==========================================
+        function iniciarSimuladorLlamadas() {
+            if (simuladorInterval) clearInterval(simuladorInterval);
+            if (timerEsperaInterval) clearInterval(timerEsperaInterval);
+
+            simuladorInterval = setInterval(() => {
+                if(modoActual === 'operador' && !document.getElementById('app-screen').classList.contains('oculto')) {
+                    const nuevoNumero = `+51 9${Math.floor(Math.random() * 9)}${Math.floor(Math.random() * 9)} ${Math.floor(Math.random() * 900)+100} ${Math.floor(Math.random() * 900)+100}`;
+                    colaLlamadas.push({ id: idLlamadaGlobal++, numero: nuevoNumero, segundosEspera: 0, tiempoMaximo: Math.floor(Math.random() * 41) + 20 });
+                    renderizarColaLlamadas();
+                }
+            }, 13000); 
+
+            timerEsperaInterval = setInterval(() => {
+                if(colaLlamadas.length > 0) {
+                    let activas = [];
+                    colaLlamadas.forEach(ll => { ll.segundosEspera++; if (ll.segundosEspera < ll.tiempoMaximo) activas.push(ll); });
+                    colaLlamadas = activas;
+                    renderizarColaLlamadas();
+                }
+            }, 1000);
+        }
+
+        function renderizarColaLlamadas() {
+            const contenedor = document.getElementById('cola-llamadas');
+            if(!contenedor) return; // Si estamos en admin
+            
+            document.getElementById('contador-cola').innerText = colaLlamadas.length;
+            if(colaLlamadas.length === 0) {
+                contenedor.innerHTML = `<div class="text-center text-slate-600 text-xs py-10"><i class="fa-solid fa-phone-slash text-2xl mb-2 opacity-30"></i><p>Líneas despejadas.</p></div>`;
+                return;
+            }
+            contenedor.innerHTML = '';
+            colaLlamadas.forEach(ll => {
+                let m = Math.floor(ll.segundosEspera / 60), s = ll.segundosEspera % 60;
+                let colorAlerta = ll.segundosEspera > 40 ? 'text-red-500 animate-pulse' : 'text-amber-500';
+                contenedor.innerHTML += `
+                    <div class="bg-slate-800/40 border border-slate-700/50 rounded p-2 relative overflow-hidden">
+                        <div class="absolute top-0 left-0 w-1 h-full bg-red-600 animate-pulse"></div>
+                        <div class="flex justify-between items-center pl-2 mb-1">
+                            <span class="text-[10px] font-bold text-slate-400 tracking-widest">ESPERA #${ll.id}</span>
+                            <span class="text-[10px] ${colorAlerta} font-tactical"><i class="fa-regular fa-clock"></i> ${m}:${s < 10 ? '0'+s : s}</span>
+                        </div>
+                        <p class="text-white font-tactical text-sm pl-2 tracking-widest mb-2">${ll.numero}</p>
+                        <div class="pl-2">
+                            <button onclick="contestarDesdeCola(${ll.id})" class="w-full bg-green-600/20 hover:bg-green-600 text-green-500 hover:text-white border border-green-700/50 text-[10px] font-bold py-1.5 rounded transition-colors tracking-widest">CONTESTAR</button>
+                        </div>
+                    </div>`;
+            });
+        }
+
+        function contestarDesdeCola(id) {
+            const index = colaLlamadas.findIndex(ll => ll.id === id);
+            if(index !== -1) {
+                const llamada = colaLlamadas[index];
+                colaLlamadas.splice(index, 1); 
+                renderizarColaLlamadas();
+                
+                document.getElementById('panel-llamada-activa').classList.remove('oculto');
+                numeroEnLlamada = llamada.numero;
+                document.getElementById('caller-number').innerText = numeroEnLlamada;
+                
+                segundosLlamada = 0;
+                actualizarTimerUI();
+                clearInterval(timerLlamadaInterval);
+                timerLlamadaInterval = setInterval(() => {
+                    segundosLlamada++;
+                    actualizarTimerUI();
+                }, 1000);
+            }
+        }
+
+        function colgarLlamada() {
+            clearInterval(timerLlamadaInterval);
+            document.getElementById('panel-llamada-activa').classList.add('oculto');
+            numeroEnLlamada = "";
+        }
+
+        function actualizarTimerUI() {
+            let m = Math.floor(segundosLlamada / 60), s = segundosLlamada % 60;
+            document.getElementById('call-timer').innerText = `${m < 10 ? '0'+m : m}:${s < 10 ? '0'+s : s}`;
+        }
+
+        function abrirModalEmergencia() { 
+            document.getElementById('coordenadas-warning').classList.add('hidden');
+            document.getElementById('tel-info').value = numeroEnLlamada !== "" ? numeroEnLlamada : "";
+            document.getElementById('modal-emergencia').classList.remove('oculto'); 
+        }
+        function cerrarModalEmergencia() { document.getElementById('modal-emergencia').classList.add('oculto'); }
+        
+        // ==========================================
+        // GESTIÓN DE PERSONAL (Restaurado 100%)
+        // ==========================================
+        async function cargarUsuarios() {
+            try {
+                const response = await fetch('/api/usuarios', { headers: { 'Authorization': tokenBasico } });
+                if(response.ok) {
+                    const usuarios = await response.json();
+                    const tbody = document.getElementById('tabla-usuarios-body');
+                    tbody.innerHTML = '';
+                    
+                    usuarios.forEach(u => {
+                        let colorRol = u.rol === 'ADMIN' ? 'text-amber-500' : (u.rol === 'DESPACHADOR' ? 'text-blue-400' : 'text-emerald-500');
+                        
+                        // Solo mostramos el botón eliminar si NO es tu propio usuario (para no auto-borrarte)
+                        let btnEliminar = "";
+                        if(u.username !== usuarioActual.username) {
+                            btnEliminar = `<button onclick="eliminarUsuario(${u.idUsuario})" class="text-red-500 hover:text-red-400" title="Dar de Baja"><i class="fa-solid fa-trash-can"></i></button>`;
+                        }
+
+                        tbody.innerHTML += `
+                            <tr class="hover:bg-slate-800/50 transition-colors">
+                                <td class="px-4 py-3 font-tactical text-slate-400">@${u.username}</td>
+                                <td class="px-4 py-3 text-slate-200">${u.nombreCompleto}</td>
+                                <td class="px-4 py-3 ${colorRol} font-bold text-[10px] tracking-wider">${u.rol}</td>
+                                <td class="px-4 py-3"><span class="text-emerald-500 text-[10px] font-bold"><i class="fa-solid fa-circle text-[6px] mr-1"></i>ACTIVO</span></td>
+                                <td class="px-4 py-3 text-right">${btnEliminar}</td>
+                            </tr>
+                        `;
+                    });
+                }
+            } catch (e) { console.error("Error cargando personal"); }
+        }
+
+        async function crearUsuario() {
+            const nombre = document.getElementById('nuevo-nombre').value;
+            const username = document.getElementById('nuevo-user').value;
+            const pass = document.getElementById('nuevo-pass').value;
+            const rol = document.getElementById('nuevo-rol').value;
+
+            if(!nombre || !username || !pass) { alert("Completa todos los campos"); return; }
+
+            const nuevoUser = {
+                nombreCompleto: nombre,
+                username: username,
+                passwordHash: pass,
+                rol: rol
+            };
+
+            try {
+                const response = await fetch('/api/usuarios', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': tokenBasico },
+                    body: JSON.stringify(nuevoUser)
+                });
+
+                if(response.ok) {
+                    alert("Personal registrado exitosamente");
+                    document.getElementById('nuevo-nombre').value = '';
+                    document.getElementById('nuevo-user').value = '';
+                    document.getElementById('nuevo-pass').value = '';
+                    cargarUsuarios();
+                } else {
+                    alert("Error al registrar. Posiblemente el ID ya exista.");
+                }
+            } catch (e) { console.error(e); }
+        }
+
+        async function eliminarUsuario(idUsuario) {
+            if(!confirm("¿Estás seguro de que deseas dar de baja a este elemento?")) return;
+
+            try {
+                const response = await fetch(`/api/usuarios/${idUsuario}`, {
+                    method: 'DELETE',
+                    headers: { 'Authorization': tokenBasico }
+                });
+
+                if(response.ok) {
+                    cargarUsuarios();
+                } else {
+                    alert("Error al eliminar el usuario.");
+                }
+            } catch(e) { alert("Error de comunicación."); }
+        }
+
+        // ==========================================
+        // GESTIÓN DE UNIDADES (Alta por Despachador)
+        // ==========================================
+        function abrirModalUnidad() { document.getElementById('modal-unidad').classList.remove('oculto'); }
+        function cerrarModalUnidad() { document.getElementById('modal-unidad').classList.add('oculto'); }
+
+        async function guardarUnidad() {
+            const codigo = document.getElementById('unidad-codigo').value;
+            const tipo = document.getElementById('unidad-tipo').value;
+
+            if(!codigo) { alert("Debe ingresar el código de la patrulla."); return; }
+
+            // Coordenadas base (Trujillo centro) para que aparezca en el mapa
+            const nuevaUnidad = {
+                codigoPatrulla: codigo,
+                tipoVehiculo: tipo,
+                latitudActual: -8.11599,
+                longitudActual: -79.03198,
+                estadoOperativo: 'DISPONIBLE'
+            };
+
+            try {
+                const response = await fetch('/api/unidades', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': tokenBasico },
+                    body: JSON.stringify(nuevaUnidad)
+                });
+
+                if(response.ok) {
+                    cerrarModalUnidad();
+                    document.getElementById('unidad-codigo').value = '';
+                    cargarUnidades(); // Refresca las patrullas en la UI
+                } else {
+                    alert("Error al registrar. Verifique que el código no esté duplicado en la Base de Datos.");
+                }
+            } catch (e) {
+                alert("Error de conexión al servidor.");
+            }
+        }
+    </script>
+</body>
+</html>
